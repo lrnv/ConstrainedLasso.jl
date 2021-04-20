@@ -61,7 +61,7 @@ function lsq_constrsparsereg_admm(
     primalres = similar(z)
 
     # allocate working arrays
-    Xaug = vcat(X, eye(p))
+    Xaug = vcat(X, Matrix{Float64}(I, p, p))
     yaug = vcat(y, fill(1, p))
     obswtaug = vcat(obswt, fill(1, p))
     λ = [ρ / (n + p)]
@@ -80,10 +80,10 @@ function lsq_constrsparsereg_admm(
         path = glmnet(Xaug, yaug;
                 weights = obswtaug, lambda = λ, penalty_factor = penwt,
                 standardize = false, intercept = false)
-        copy!(β, path.betas)
+        copyto!(β, path.betas)
         # update z - projection to constraint set
         v .= β .+ u
-        copy!(zold, z)
+        copyto!(zold, z)
         z = proj(v) ## could not do in-place; z = proj!(v) not working
         # update scaled dual variables u
         dualresnorm = norm((z - zold) / admmscale)
@@ -97,9 +97,9 @@ function lsq_constrsparsereg_admm(
         u .+= primalres
         # check convergence criterion
         if (primalresnorm <= √p * admmabstol
-                + admmreltol * max(vecnorm(β), vecnorm(z))) &&
+                + admmreltol * max(norm(β), norm(z))) &&
                 (dualresnorm <= √n * admmabstol
-                + admmreltol * vecnorm(u / admmscale))
+                + admmreltol * norm(u / admmscale))
             break
         end
         # update ADMM scale parameter if requested

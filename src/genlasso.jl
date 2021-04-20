@@ -43,23 +43,23 @@ function genlasso(
 
   # singular value decomposition on D
   m = size(D, 1)
-  F = svdfact!(D, thin = false)
+  F = svd!(D, full = true)
   # extract singular values and submatrices
-  singvals = F[:S]
-  rankD = countnz(F[:S] .> abs(F[:S][1]) * eps(F[:S][1]) * maximum(size(D)))
-  V1 = F[:V][:, 1:rankD]
-  V2 = F[:V][:, rankD+1:end]
-  U1 = F[:U][:, 1:rankD]
-  U2 = F[:U][:, rankD+1:end]
+  singvals = F.S
+  rankD = count(!iszero,F.S .> abs(F.S[1]) * eps(F.S[1]) * maximum(size(D)))
+  V1 = F.V[:, 1:rankD]
+  V2 = F.V[:, rankD+1:end]
+  U1 = F.U[:, 1:rankD]
+  U2 = F.U[:, rankD+1:end]
   # calculate the MP-inverse of D
-  Dplus = V1 * broadcast(*, U1', 1 ./ F[:S])
+  Dplus = V1 * broadcast(*, U1', 1 ./ F.S)
   # transform the design matrix
   XDplus = X * Dplus
   XV2 = X * V2
   # projection matrix onto C(XV2)
-  Pxv2 = (1 / dot(XV2, XV2)) * A_mul_Bt(XV2, XV2)
+  Pxv2 = (1 / dot(XV2, XV2)) * XV2 * transpose(XV2)
   # orthogonal projection matrix
-  Mxv2 = eye(size(XV2, 1)) - Pxv2
+  Mxv2 = Matrix{Float64}(I, size(XV2, 1),size(XV2, 1)) - Pxv2
   # obtain the new design matrix and response vector
   ỹ = vec(Mxv2 * y)
   X̃ = Mxv2 * XDplus
@@ -74,7 +74,7 @@ function genlasso(
   end
   # transform back to beta
   β̂path = Base.LinAlg.BLAS.ger!(1.0, vec(V2 * ((1 / dot(XV2, XV2)) *
-    		At_mul_B(XV2, y))), ones(size(ρpath)), (eye(size(V2, 1)) -
+    		At_mul_B(XV2, y))), ones(size(ρpath)), (Matrix{Float64}(I, size(V2, 1),size(V2, 1)) -
     		V2 * ((1 / dot(XV2, XV2)) * At_mul_B(XV2, X))) * Dplus * α̂path)
 
   return β̂path, ρpath

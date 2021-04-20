@@ -57,7 +57,7 @@ function lsq_classopath(
         end
         # create augmented data
         y = [y; zeros(p)]
-        X = [X; √ρridge * eye(p)]
+        X = [X; √ρridge * Matrix{Float64}(I, p, p)]
         # record original number of observations
         # n_orig = n
     else
@@ -73,7 +73,7 @@ function lsq_classopath(
             end
             # create augmented data
             y = [y; zeros(p)]
-            X = [X; √ρridge * eye(p)]
+            X = [X; √ρridge * Matrix{Float64}(I, p, p)]
         end
     end
 
@@ -146,6 +146,7 @@ function lsq_classopath(
 
     k = 0
 
+    outer_k = 1
     for k in 2:maxiters
 
       # threshold near-zero rhos to zero and stop algorithm
@@ -635,13 +636,15 @@ function lsq_classopath(
           break
       end
 
+      outer_k += 1
     end # end of big for loop
 
-       βpath = βpath[:, 1:k-1]
-       deleteat!(ρpath, k:length(ρpath))
-       deleteat!(objvalpath, k:length(objvalpath))
-       deleteat!(dfpath, k:length(dfpath))
-       dfpath[dfpath .< 0] .= 0;
+    k= outer_k
+    βpath = βpath[:, 1:k-1]
+    deleteat!(ρpath, k:length(ρpath))
+    deleteat!(objvalpath, k:length(objvalpath))
+    deleteat!(dfpath, k:length(dfpath))
+    dfpath[dfpath .< 0] .= 0;
 
 
     return βpath, ρpath, objvalpath, λpatheq, μpathineq, dfpath, violationspath

@@ -5,7 +5,7 @@ using Test, ConstrainedLasso, ECOS, Random
 @info("Test lsq_classopath: sum-to-zero constraint")
 
 # set up
-Random.seed!(123)
+Random.seed!(456)
 n, p = 100, 20
 # truth with sum constraint sum(β) = 0
 β = zeros(p)
@@ -22,8 +22,10 @@ beq = [0.0]
 penwt  = ones(p)
 
 β̂path1, ρpath1, objpath, = lsq_classopath(X, y; Aeq = Aeq, beq = beq)
-@test all(abs.(sum(β̂path1, dims=1)) .< 1e-6)
-
+# print(β̂path1)
+# print(size(β̂path1))
+# print(sum(β̂path1,1))
+@test all(abs.(sum(β̂path1, 1)) .< 1.0e-6)
 
 
 @info("Test lsq_classopath: non-negativity constraint")
