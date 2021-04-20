@@ -1,8 +1,8 @@
 module genlasso_test
 
-using Base.Test, ConstrainedLasso, ECOS
+using Test, ConstrainedLasso, ECOS, Random
 
-info("Test genlasso")
+@info("Test genlasso")
 
 y = randn(20)
 n = p = size(y, 1)

@@ -41,7 +41,6 @@ subject to linear constraints, using `Convex.jl`.
 - `objval`  : optimal objective value.
 - `problem` : Convex.jl problem.
 """
-
 function lsq_constrsparsereg(
     X::AbstractMatrix{T},
     y::AbstractVector{T},
@@ -63,7 +62,7 @@ function lsq_constrsparsereg(
     prob_vec = Convex.Problem[]
 
     β = Variable(p)
-    loss = (1//2)sumsquares(sqrt(obswt) .* (y - X * β)) # loss term
+    loss = (1//2)sumsquares.(Ref(sqrt.(obswt) .* (y - X * β),1)) # loss term
     pen  = dot(penwt, abs(β)) # penalty term
     eqconstr   = Aeq * β == beq
     ineqconstr = Aineq * β <= bineq
@@ -80,7 +79,7 @@ function lsq_constrsparsereg(
       end
 
       if warmstart
-          solve!(problem, solver; warmstart = i > 1? true : false)
+          solve!(problem, solver; warmstart = (i > 1) ? true : false)
           push!(prob_vec, problem)
           optval_vec[i] = problem.optval
       else

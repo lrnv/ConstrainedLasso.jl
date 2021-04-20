@@ -37,7 +37,6 @@ alternating direction method of multipliers (ADMM) algorithm.
 ### Returns
 - `β`       : estimated coefficents.
 """
-
 function lsq_constrsparsereg_admm(
     X::AbstractMatrix{T},
     y::AbstractVector{T},
@@ -157,7 +156,6 @@ alternating direction method of multipliers (ADMM) algorithm.
 ### Returns
 - `βpath`       : estimated coefficents along the grid of `ρ` values.
 """
-
 function lsq_constrsparsereg_admm(
     X::AbstractMatrix{T},
     y::AbstractVector{T},

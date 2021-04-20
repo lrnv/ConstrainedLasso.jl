@@ -32,7 +32,6 @@ Note genralized lasso minimizes
 - `objval`  : optimal objective value.
 - `problem` : Convex.jl problem.
 """
-
 function genlasso(
     X::AbstractMatrix{T},
     y::AbstractArray{T};
@@ -53,7 +52,7 @@ function genlasso(
   U1 = F[:U][:, 1:rankD]
   U2 = F[:U][:, rankD+1:end]
   # calculate the MP-inverse of D
-  Dplus = V1 * broadcast(*, U1', 1./F[:S])
+  Dplus = V1 * broadcast(*, U1', 1 ./ F[:S])
   # transform the design matrix
   XDplus = X * Dplus
   XV2 = X * V2

@@ -1,6 +1,6 @@
 module ConstrainedLasso
 
-using Convex, GLMNet, ECOS
+using Convex, GLMNet, ECOS, Random, LinearAlgebra
 
 # package code goes here
 include("constrsparsereg.jl")

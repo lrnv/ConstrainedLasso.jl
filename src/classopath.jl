@@ -34,7 +34,6 @@ subject to linear constraints.
 ### Examples
 See tutorial examples at <https://hua-zhou.github.io/ConstrainedLasso.jl/latest/demo/path/>.
 """
-
 function lsq_classopath(
     X::AbstractMatrix{T},
     y::AbstractArray{T};
@@ -63,7 +62,7 @@ function lsq_classopath(
         # n_orig = n
     else
         # make sure X is full column rank
-        R = qrfact(X)[:R]
+        R = qr(X).R
         rankX = sum(abs.(diag(R)) .> abs(R[1,1]) * max(n,p) * eps(eps(eltype(R))))
 
         if rankX != p
@@ -92,7 +91,7 @@ function lsq_classopath(
 
     ### initialization
     # use LP to find ρmax
-    H = At_mul_B(X, X)
+    H = transpose(X) * X
     #sense = [repmat(['='], neq); repmat(['<'], nineq)]
     #β, _, problem = lsq_constrsparsereg(X, y, Inf;      # why necessary?
     #          [Aeq; Aineq], sense, [beq; bineq], lb, ub)#
@@ -108,28 +107,28 @@ function lsq_classopath(
 
     for i in 1:min(2, length(problem.constraints))
       if eval((problem.constraints[i]).head) == ==
-        λpatheq[:, 1] = problem.constraints[i].dual
+        λpatheq[:, 1] .= problem.constraints[i].dual
       elseif eval((problem.constraints[i]).head) == <=
         μpathineq[:, 1] = problem.constraints[i].dual
       end
     end
 
-    μpathineq[μpathineq .< 0] = 0
+    μpathineq[μpathineq .< 0] .= 0
     setActive = (abs.(βpath[:, 1]) .> 1e-4) .| (.~penidx)
-    βpath[find(.!setActive), 1] = 0
+    βpath[findall(.!setActive), 1] .= 0
 
     residIneq = Aineq * βpath[:, 1] - bineq
     setIneqBorder = residIneq .== 0
-    nIneqBorder = countnz(setIneqBorder)
+    nIneqBorder = count(!iszero,setIneqBorder)
 
     # initialize subgradient vector
     resid = y - X * βpath[:, 1]
     subgrad = X' * resid - Aeq' * λpatheq[:, 1] - Aineq' * μpathineq[:, 1]
 
-    subgrad[setActive] = sign.(βpath[find(setActive), 1])
+    subgrad[setActive] = sign.(βpath[findall(setActive), 1])
     subgrad[.!setActive] = subgrad[.!setActive] / ρpath[1]
     setActive[idx] = true
-    nActive = countnz(setActive)
+    nActive = count(!iszero,setActive)
 
     # calculate degrees of freedom
     rankAeq = rank(Aeq) ### Brian's comment: need to make it more efficient
@@ -158,12 +157,12 @@ function lsq_classopath(
       # calculate derivative for coefficients and multipliers
       # construct matrix
 
-      activeCoeffs = find(setActive)
-      inactiveCoeffs = find(.!setActive)
-      idxIneqBorder = find(setIneqBorder)
+      activeCoeffs = findall(setActive)
+      inactiveCoeffs = findall(.!setActive)
+      idxIneqBorder = findall(setIneqBorder)
 
       M = hcat(H[activeCoeffs, activeCoeffs], Aeq[:, activeCoeffs]',
-        Aineq[find(setIneqBorder), activeCoeffs]')
+        Aineq[findall(setIneqBorder), activeCoeffs]')
       M = vcat(M, zeros(neq + nIneqBorder, size(M, 2)))
       M[(end - neq - nIneqBorder + 1):end, 1:nActive] = [Aeq[:, activeCoeffs];
                 Aineq[idxIneqBorder, activeCoeffs]]
@@ -187,24 +186,24 @@ function lsq_classopath(
 
       ## inactive coefficients moving too slowly
       # negative subgradient
-      inactSlowNegIdx = find(((1*dirsgn - 1e-8) .<= subgrad[.~setActive]) .&
+      inactSlowNegIdx = findall(((1*dirsgn - 1e-8) .<= subgrad[.~setActive]) .&
         (subgrad[.~setActive] .<= (1*dirsgn + 1e-8)) .&
         (1*dirsgn .< dirSubgrad))
 
       # positive subgradient
-      inactSlowPosIdx = find(((-1*dirsgn - 1e-8) .<= subgrad[.~setActive]) .&
+      inactSlowPosIdx = findall(((-1*dirsgn - 1e-8) .<= subgrad[.~setActive]) .&
           (subgrad[.~setActive] .<= (-1*dirsgn + 1e-8)) .&
           (dirSubgrad .< -1*dirsgn))
 
       ## "active" coeficients estimated as 0 with potential sign mismatch #%
       # positive subgrad but negative derivative
-      signMismatchPosIdx = find(((0 - 1e-8) .<= subgrad[setActive]) .&
+      signMismatchPosIdx = findall(((0 - 1e-8) .<= subgrad[setActive]) .&
           (subgrad[setActive] .<= (1 + 1e-8)) .&
           (dirsgn * dir[1:nActive] .<= (0 - 1e-8)) .&
           (βpath[activeCoeffs, k-1] .== 0))
 
       # Negative subgradient but positive derivative
-      signMismatchNegIdx = find(((-1 - 1e-8) .<= subgrad[setActive]) .&
+      signMismatchNegIdx = findall(((-1 - 1e-8) .<= subgrad[setActive]) .&
           (subgrad[setActive] .<= (0 + 1e-8)) .&
           ((0 + 1e-8) .<= dirsgn * dir[1:nActive]) .&
           (βpath[activeCoeffs, k-1] .== 0))
@@ -220,21 +219,21 @@ function lsq_classopath(
           while !isempty(inactSlowNegIdx)
             ## Identify and move problem coefficient
             # indices corresponding to inactive coefficients
-            inactiveCoeffs = find(.!setActive)
+            inactiveCoeffs = findall(.!setActive)
             # identify problem coefficient
             viol_coeff = inactiveCoeffs[inactSlowNegIdx]
             setActive[viol_coeff] = true
 
             # determine new number of active coefficients
-            nActive = countnz(setActive)
+            nActive = count(!iszero,setActive)
             # determine number of active/binding inequality constraints
-            nIneqBorder = countnz(setIneqBorder)
+            nIneqBorder = count(!iszero,setIneqBorder)
 
-            activeCoeffs = find(setActive)
-            inactiveCoeffs = find(.!setActive)
-            idxIneqBorder = find(setIneqBorder)
+            activeCoeffs = findall(setActive)
+            inactiveCoeffs = findall(.!setActive)
+            idxIneqBorder = findall(setIneqBorder)
             M = hcat(H[activeCoeffs, activeCoeffs], Aeq[:, activeCoeffs]',
-              Aineq[find(setIneqBorder), activeCoeffs]')
+              Aineq[findall(setIneqBorder), activeCoeffs]')
             M = vcat(M, zeros(neq + nIneqBorder, size(M, 2)))
             M[(end - neq - nIneqBorder + 1):end, 1:nActive] = [Aeq[:, activeCoeffs];
                       Aineq[idxIneqBorder, activeCoeffs]]
@@ -255,24 +254,24 @@ function lsq_classopath(
 
             ## inactive coefficients moving too slowly
             # negative subgradient
-            inactSlowNegIdx = find(((1*dirsgn - 1e-8) .<= subgrad[.~setActive]) .&
+            inactSlowNegIdx = findall(((1*dirsgn - 1e-8) .<= subgrad[.~setActive]) .&
               (subgrad[.~setActive] .<= (1*dirsgn + 1e-8)) .&
               (1*dirsgn .< dirSubgrad))
 
             # positive subgradient
-            inactSlowPosIdx = find(((-1*dirsgn - 1e-8) .<= subgrad[.~setActive]) .&
+            inactSlowPosIdx = findall(((-1*dirsgn - 1e-8) .<= subgrad[.~setActive]) .&
                 (subgrad[.~setActive] .<= (-1*dirsgn + 1e-8)) .&
                 (dirSubgrad .< -1*dirsgn))
 
             ## "active" coeficients estimated as 0 with potential sign mismatch #%
             # positive subgrad but negative derivative
-            signMismatchPosIdx = find(((0 - 1e-8) .<= subgrad[setActive]) .&
+            signMismatchPosIdx = findall(((0 - 1e-8) .<= subgrad[setActive]) .&
                 (subgrad[setActive] .<= (1 + 1e-8)) .&
                 (dirsgn * dir[1:nActive] .<= (0 - 1e-8)) .&
                 (βpath[activeCoeffs, k-1] .== 0))
 
             # Negative subgradient but positive derivative
-            signMismatchNegIdx = find(((-1 - 1e-8) .<= subgrad[setActive]) .&
+            signMismatchNegIdx = findall(((-1 - 1e-8) .<= subgrad[setActive]) .&
                 (subgrad[setActive] .<= (0 + 1e-8)) .&
                 ((0 + 1e-8) .<= dirsgn * dir[1:nActive]) .&
                 (βpath[activeCoeffs, k-1] .== 0))
@@ -291,24 +290,24 @@ function lsq_classopath(
           while ~isempty(inactSlowPosIdx)
               # Identify & move problem coefficient #%
               # indices corresponding to inactive coefficients
-              inactiveCoeffs = find(.!setActive)
+              inactiveCoeffs = findall(.!setActive)
               # identify problem coefficient
               viol_coeff = inactiveCoeffs[inactSlowPosIdx]
               # put problem coefficient back into active set;
               setActive[viol_coeff] = true
               # determine new number of active coefficients
-              nActive = countnz(setActive)
+              nActive = count(!iszero,setActive)
               # determine number of active/binding inequality constraints
-              nIneqBorder = countnz(setIneqBorder)
+              nIneqBorder = count(!iszero,setIneqBorder)
 
               # Recalculate derivative for coefficients & multiplier #%
               # construct matrix
 
-              activeCoeffs = find(setActive)
-              inactiveCoeffs = find(.!setActive)
-              idxIneqBorder = find(setIneqBorder)
+              activeCoeffs = findall(setActive)
+              inactiveCoeffs = findall(.!setActive)
+              idxIneqBorder = findall(setIneqBorder)
               M = hcat(H[activeCoeffs, activeCoeffs], Aeq[:, activeCoeffs]',
-                Aineq[find(setIneqBorder), activeCoeffs]')
+                Aineq[findall(setIneqBorder), activeCoeffs]')
               M = vcat(M, zeros(neq + nIneqBorder, size(M, 2)))
               M[(end - neq - nIneqBorder + 1):end, 1:nActive] = [Aeq[:, activeCoeffs];
                         Aineq[idxIneqBorder, activeCoeffs]]
@@ -328,19 +327,19 @@ function lsq_classopath(
 
               # Misc. housekeeping #%
               # check for violations again
-              inactSlowPosIdx = find(((-1*dirsgn - 1e-8) .<= subgrad[.!setActive]) .&
+              inactSlowPosIdx = findall(((-1*dirsgn - 1e-8) .<= subgrad[.!setActive]) .&
                   (subgrad[.!setActive] .<= (-1*dirsgn + 1e-8)) .&
                   (dirSubgrad .< -1*dirsgn))
 
               # "Active" coeficients est'd as 0 with potential sign mismatch #%
               # Positive subgrad but negative derivative
-              signMismatchPosIdx = find(((0 - 1e-8) .<= subgrad[setActive]) .&
+              signMismatchPosIdx = findall(((0 - 1e-8) .<= subgrad[setActive]) .&
                   (subgrad[setActive] .<= (1 + 1e-8)) .&
                   (dirsgn * dir[1:nActive] .<= (0 - 1e-8)) .&
                   (βpath[activeCoeffs, k-1] .== 0))
 
               # Negative subgradient but positive derivative
-              signMismatchNegIdx = find(((-1 - 1e-8) .<= subgrad[setActive]) .&
+              signMismatchNegIdx = findall(((-1 - 1e-8) .<= subgrad[setActive]) .&
                   (subgrad[setActive] .<= (0 + 1e-8)) .&
                   ((0 + 1e-8) .<= dirsgn * dir[1:nActive]) .&
                   (βpath[activeCoeffs, k-1] .== 0))
@@ -357,21 +356,21 @@ function lsq_classopath(
           while ~isempty(signMismatchPosIdx)
               ## Identify & move problem coefficient #%
               # indices corresponding to active coefficients
-              activeCoeffs = find(setActive)
+              activeCoeffs = findall(setActive)
               # identify prblem coefficient
               viol_coeff = activeCoeffs[signMismatchPosIdx]
               # put problem coefficient back into inactive set;
               setActive[viol_coeff] = false
               # determine new number of active coefficients
-              nActive = countnz(setActive)
+              nActive = count(!iszero,setActive)
               # determine number of active/binding inequality constraints
-              nIneqBorder = countnz(setIneqBorder)
+              nIneqBorder = count(!iszero,setIneqBorder)
 
               ## Recalculate derivative for coefficients & multipliers #%
               # construct matrix
-              activeCoeffs = find(setActive)
-              inactiveCoeffs = find(.!setActive)
-              idxIneqBorder = find(setIneqBorder)
+              activeCoeffs = findall(setActive)
+              inactiveCoeffs = findall(.!setActive)
+              idxIneqBorder = findall(setIneqBorder)
               M = hcat(H[activeCoeffs, activeCoeffs], Aeq[:, activeCoeffs]',
                 Aineq[idxIneqBorder, activeCoeffs]')
               M = vcat(M, zeros(neq + nIneqBorder, size(M, 2)))
@@ -392,13 +391,13 @@ function lsq_classopath(
 
               ## Misc. housekeeping #%
               # check for violations again
-              signMismatchPosIdx = find(((0 - 1e-8) .<= subgrad[setActive]) .&
+              signMismatchPosIdx = findall(((0 - 1e-8) .<= subgrad[setActive]) .&
                       (subgrad[setActive] .<= (1 + 1e-8)) .&
                       (dirsgn * dir[1:nActive] .<= (0 - 1e-8)) .&
                       (βpath[activeCoeffs, k-1] .== 0))
 
               # Negative subgradient but positive derivative
-              signMismatchNegIdx = find(((-1 - 1e-8) .<= subgrad[setActive]) .&
+              signMismatchNegIdx = findall(((-1 - 1e-8) .<= subgrad[setActive]) .&
                       (subgrad[setActive] .<= (0 + 1e-8)) .&
                       ((0 + 1e-8) .<= dirsgn * dir[1:nActive]) .&
                       (βpath[activeCoeffs, k-1] .== 0))
@@ -415,21 +414,21 @@ function lsq_classopath(
           while ~isempty(signMismatchNegIdx)
               ## Identify & move problem coefficient #%
               # indices corresponding to active coefficients
-              activeCoeffs = find(setActive)
+              activeCoeffs = findall(setActive)
               # identify prblem coefficient
               viol_coeff = activeCoeffs[signMismatchNegIdx]
               # put problem coefficient back into inactive set;
               setActive[viol_coeff] = false
               # determine new number of active coefficients
-              nActive = countnz(setActive)
+              nActive = count(!iszero,setActive)
               # determine number of active/binding inequality constraints
-              nIneqBorder = countnz(setIneqBorder)
+              nIneqBorder = count(!iszero,setIneqBorder)
 
               ## Recalculate derivative for coefficients & multipliers #%
               # construct matrix
-              activeCoeffs = find(setActive)
-              inactiveCoeffs = find(.!setActive)
-              idxIneqBorder = find(setIneqBorder)
+              activeCoeffs = findall(setActive)
+              inactiveCoeffs = findall(.!setActive)
+              idxIneqBorder = findall(setIneqBorder)
               M = hcat(H[activeCoeffs, activeCoeffs], Aeq[:, activeCoeffs]',
                 Aineq[idxIneqBorder, activeCoeffs]')
               M = vcat(M, zeros(neq + nIneqBorder, size(M, 2)))
@@ -450,7 +449,7 @@ function lsq_classopath(
 
 
               # Recheck for violations #%
-              signMismatchNegIdx = find(((-1 - 1e-8) .<= subgrad[setActive]) .&
+              signMismatchNegIdx = findall(((-1 - 1e-8) .<= subgrad[setActive]) .&
                         (subgrad[setActive] .<= (0 + 1e-8)) .&
                         ((0 + 1e-8) .<= dirsgn * dir[1:nActive]) .&
                         (βpath[activeCoeffs, k-1] .== 0))
@@ -465,30 +464,30 @@ function lsq_classopath(
 
           ## update violation trackers to see if any issues persist ##%
 
-          activeCoeffs = find(setActive)
-          inactiveCoeffs = find(.!setActive)
-          idxIneqBorder = find(setIneqBorder)
+          activeCoeffs = findall(setActive)
+          inactiveCoeffs = findall(.!setActive)
+          idxIneqBorder = findall(setIneqBorder)
 
           # Inactive coefficients moving too slowly #%
           # Negative subgradient
           inactSlowNegIdx =
-              find(((1 * dirsgn - 1e-8) .<= subgrad[.!setActive]) .&
+              findall(((1 * dirsgn - 1e-8) .<= subgrad[.!setActive]) .&
               (subgrad[.~setActive] .<= (1 * dirsgn + 1e-8)) .&
               (1 * dirsgn .< dirSubgrad))
 %         # Positive subgradient
-          inactSlowPosIdx = find(((-1*dirsgn - 1e-8) .<= subgrad[.!setActive]) .&
+          inactSlowPosIdx = findall(((-1*dirsgn - 1e-8) .<= subgrad[.!setActive]) .&
               (subgrad[.!setActive] .<= (-1 * dirsgn + 1e-8)) .&
               (dirSubgrad .< -1 * dirsgn))
 
           # "Active" coefficients estimated as 0 with potential sign mismatch #%
           # Positive subgrad but negative derivative
-          signMismatchPosIdx = find(((0 - 1e-8) .<= subgrad[setActive]) .&
+          signMismatchPosIdx = findall(((0 - 1e-8) .<= subgrad[setActive]) .&
               (subgrad[setActive] .<= (1 + 1e-8)) .&
               (dirsgn * dir[1:nActive] .<= (0 - 1e-8)) .&
               (βpath[activeCoeffs, k-1] .== 0))
 
           # Negative subgradient but positive derivative
-          signMismatchNegIdx = find(((-1 - 1e-8) .<= subgrad[setActive]) .&
+          signMismatchNegIdx = findall(((-1 - 1e-8) .<= subgrad[setActive]) .&
               (subgrad[setActive] .<= (0 + 1e-8)) .&
               ((0 + 1e-8) .<= dirsgn * dir[1:nActive]) .&
               (βpath[activeCoeffs, k-1] .== 0))
@@ -504,11 +503,11 @@ function lsq_classopath(
       violationspath[k] = violateCounter;
 
       # calculate derivative for residual inequality
-      activeCoeffs = find(setActive)
-      inactiveCoeffs = find(.!setActive)
-      idxIneqBorder = find(setIneqBorder)
+      activeCoeffs = findall(setActive)
+      inactiveCoeffs = findall(.!setActive)
+      idxIneqBorder = findall(setIneqBorder)
 
-      dirResidIneq = Aineq[find(.!setIneqBorder), activeCoeffs] * dir[1:nActive]
+      dirResidIneq = Aineq[findall(.!setIneqBorder), activeCoeffs] * dir[1:nActive]
 
       ### Determine rho for next event (via delta rho) ###%
       ## Events based on coefficients changing activation status ##%
@@ -520,19 +519,19 @@ function lsq_classopath(
       nextρβ[setActive] = -dirsgn * βpath[activeCoeffs, k-1] ./ dir[1:nActive]
 
       # Inactive coefficient becoming positive #%
-      t1 = dirsgn * ρpath[k-1] * (1 - subgrad[inactiveCoeffs]) ./ (dirSubgrad - 1)
+      t1 = dirsgn * ρpath[k-1] * (1 .- subgrad[inactiveCoeffs]) ./ (dirSubgrad .- 1)
       # threshold values hitting ceiling
-      t1[t1 .<= 1e-8] = Inf;
+      t1[t1 .<= 1e-8] .= Inf;
 
       # Inactive coefficient becoming negative #%
-      t2 = -dirsgn * ρpath[k-1] * (1 + subgrad[.!setActive]) ./ (dirSubgrad + 1)
+      t2 = -dirsgn * ρpath[k-1] * (1 .+ subgrad[.!setActive]) ./ (dirSubgrad .+ 1)
       # threshold values hitting ceiling
-      t2[t2 .<= 1e-8] = Inf
+      t2[t2 .<= 1e-8] .= Inf
 
       # choose smaller delta rho out of t1 and t2
       nextρβ[.!setActive] = min.(t1, t2)
       # ignore delta rhos numerically equal to zero
-      nextρβ[(nextρβ .<= 1e-8) .| (.!penidx)] = Inf
+      nextρβ[(nextρβ .<= 1e-8) .| (.!penidx)] .= Inf
 
 
       ## Events based inequality constraints ##%
@@ -541,8 +540,8 @@ function lsq_classopath(
 
       # Inactive inequality constraint becoming active #%
       nextρIneq[.!setIneqBorder] = reshape(-dirsgn * residIneq[.!setIneqBorder],
-                countnz(.!setIneqBorder), 1) ./
-                reshape(dirResidIneq, countnz(.~setIneqBorder), 1)
+                count(!iszero,.!setIneqBorder), 1) ./
+                reshape(dirResidIneq, count(!iszero,.~setIneqBorder), 1)
 
       # Active inequality constraint becoming deactive #%
       if !isempty(μpathineq)
@@ -552,13 +551,13 @@ function lsq_classopath(
       end
 
       # ignore delta rhos equal to zero
-      nextρIneq[nextρIneq .<= 1e-8] = Inf
+      nextρIneq[nextρIneq .<= 1e-8] .= Inf
 
       ## determine next rho ##
       # find smallest rho
       chgρ = findmin([nextρβ; nextρIneq])[1]
       # find all indices corresponding to this chgρ
-      idx = find(([nextρβ; nextρIneq] - chgρ) .<= 1e-8)
+      idx = findall(([nextρβ; nextρIneq] .- chgρ) .<= 1e-8)
 
       # terminate path following if no new event found
       if chgρ == Inf
@@ -577,12 +576,12 @@ function lsq_classopath(
 
       ## Update parameter and subgradient values #%
       # new coefficient estimates
-      activeCoeffs = find(setActive)
+      activeCoeffs = findall(setActive)
 
       βpath[activeCoeffs, k] = βpath[activeCoeffs, k-1] +
             dirsgn * chgρ * dir[1:nActive]
       # force near-zero coefficients to be zero (helps with numerical issues)
-      βpath[abs.(βpath[:, k]) .< 1e-12, k] = 0
+      βpath[abs.(βpath[:, k]) .< 1e-12, k] .= 0
 
       # new subgradient estimates
       subgrad[.!setActive] = (ρpath[k-1] * subgrad[.!setActive] +
@@ -620,9 +619,9 @@ function lsq_classopath(
       end
 
       # determine new number of active coefficients
-      nActive = countnz(setActive)
+      nActive = count(!iszero,setActive)
       # determine number of active/binding inequality constraints
-      nIneqBorder = countnz(setIneqBorder)
+      nIneqBorder = count(!iszero,setIneqBorder)
 
       ## Calcuate and store values of interest along the path #%
       # calculate value of objective function
@@ -642,7 +641,7 @@ function lsq_classopath(
        deleteat!(ρpath, k:length(ρpath))
        deleteat!(objvalpath, k:length(objvalpath))
        deleteat!(dfpath, k:length(dfpath))
-       dfpath[dfpath .< 0] = 0;
+       dfpath[dfpath .< 0] .= 0;
 
 
     return βpath, ρpath, objvalpath, λpatheq, μpathineq, dfpath, violationspath
@@ -710,7 +709,7 @@ function find_ρmax(
       μineq[μineq .< 0] = 0
     end
     setActive = (abs.(β) .> 1e-4) .| (.~penidx)
-    β[.!setActive] = 0
+    β[.!setActive] .= 0
 
     resid = y - X * β
     subgrad = X' * resid - Aeq' * λeq - Aineq' * μineq

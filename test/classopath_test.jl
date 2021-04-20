@@ -1,18 +1,18 @@
 module classopath_test
 
-using Base.Test, ConstrainedLasso, ECOS
+using Test, ConstrainedLasso, ECOS, Random
 
-info("Test lsq_classopath: sum-to-zero constraint")
+@info("Test lsq_classopath: sum-to-zero constraint")
 
 # set up
-srand(123)
+Random.seed!(123)
 n, p = 100, 20
 # truth with sum constraint sum(β) = 0
 β = zeros(p)
-β[1:round(Int, p / 4)] = 0
-β[(round(Int, p / 4) + 1):round(Int, p / 2)] = 1
-β[(round(Int, p / 2) + 1):round(Int, 3p / 4)] = 0
-β[(round(Int, 3p / 4) + 1):p] = -1
+β[1:round(Int, p / 4)] .= 0
+β[(round(Int, p / 4) + 1):round(Int, p / 2)] .= 1
+β[(round(Int, p / 2) + 1):round(Int, 3p / 4)] .= 0
+β[(round(Int, 3p / 4) + 1):p] .= -1
 # generate data
 X = randn(n, p)
 y = X * β + randn(n)
@@ -22,11 +22,11 @@ beq = [0.0]
 penwt  = ones(p)
 
 β̂path1, ρpath1, objpath, = lsq_classopath(X, y; Aeq = Aeq, beq = beq)
-@test all(abs.(sum(β̂path1, 1)) .< 1e-6)
+@test all(abs.(sum(β̂path1, dims=1)) .< 1e-6)
 
 
 
-info("Test lsq_classopath: non-negativity constraint")
+@info("Test lsq_classopath: non-negativity constraint")
 
 # set up
 n, p = 20, 100
@@ -34,7 +34,7 @@ n, p = 20, 100
 β = zeros(p)
 β[1:10] = 1:10
 # generate data
-srand(123)
+Random.seed!(123)
 X = randn(n, p)
 y = X * β + randn(n)
 # inequality constraints
